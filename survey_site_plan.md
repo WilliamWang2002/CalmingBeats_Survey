@@ -380,6 +380,9 @@ volumes:
   mongo_data:
 ```
 
+This shared MongoDB container should be started from `CalmingMoments_backend/`, not from `Survey_Site/`.
+There should be a single local MongoDB compose entrypoint to avoid port conflicts on `localhost:27017`.
+
 ### `Survey_Site/Dockerfile`
 
 ```dockerfile
@@ -407,17 +410,19 @@ CMD ["node", "server.js"]
 ### Local Dev Workflow
 
 ```bash
-# Start MongoDB only
+# In CalmingMoments_backend/ - start shared MongoDB once
 docker compose up -d
 
 # In CalmingMoments_backend/
 pnpm start:dev
 
 # In Survey_Site/
+pnpm install
 pnpm dev
 ```
 
 Survey Site should use `MONGODB_URI=mongodb://localhost:27017/calmingbeats-dev` for this workflow.
+Do not start MongoDB separately from `Survey_Site/`.
 
 ---
 

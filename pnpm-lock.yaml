@@ -36,6 +36,9 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
+      '@types/cookie':
+        specifier: ^0.6.0
+        version: 0.6.0
       '@types/node':
         specifier: ^20.14.12
         version: 20.19.43
@@ -255,6 +258,9 @@ packages:
     peerDependenciesMeta:
       tree-sitter:
         optional: true
+
+  '@types/cookie@0.6.0':
+    resolution: {integrity: sha512-4Kh9a6B2bQciAhf7FSuMRRkUWecJgJu9nPnx3yzpsfXX/c50REIqpHY4C82bXP90qrLtXtkDxTZosYO3UpOwlA==}
 
   '@types/hast@3.0.4':
     resolution: {integrity: sha512-WPs+bbQw5aCj+x6laNGWLH3wviHtoCv/P3+otBhbOhJgG8qtpdAMlTCxLtsTWA7LH1Oh/bFCHsBn0TPS5m30EQ==}
@@ -1503,6 +1509,8 @@ snapshots:
     optionalDependencies:
       tree-sitter: 0.22.4
     optional: true
+
+  '@types/cookie@0.6.0': {}
 
   '@types/hast@3.0.4':
     dependencies:
