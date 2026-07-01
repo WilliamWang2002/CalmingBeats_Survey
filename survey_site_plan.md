@@ -47,21 +47,6 @@ Authorization: Bearer <token>
 
 ## MongoDB Schemas
 
-### `question_events` — embedded subdocument (no own collection)
-
-```ts
-{
-  questionId:  String,    // e.g. "q1", "q2"
-  occurredAt:  Date,      // client-recorded timestamp of the interaction
-  isEdit:      Boolean    // false = first time answering, true = any subsequent revisit
-}
-```
-
-Used only as an embedded array inside `survey_trackers.questionEvents`. Never stored
-as a top-level collection. `_id` suppressed (`{ _id: false }`) to keep the array lean.
-
----
-
 ### `survey_trackers` — behavioral timing (append-only)
 
 ```ts
@@ -80,6 +65,28 @@ as a top-level collection. `_id` suppressed (`{ _id: false }`) to keep the array
 - Revisit count per question: count of events where `isEdit = true`
 - Total dwell time: diff between consecutive events touching a question
 - Abandonment detection: `finalSubmitTime = null`
+
+
+
+
+
+
+
+
+### `question_events` — embedded subdocument (no own collection)
+
+```ts
+{
+  questionId:  String,    // e.g. "q1", "q2"
+  occurredAt:  Date,      // client-recorded timestamp of the interaction
+  isEdit:      Boolean    // false = first time answering, true = any subsequent revisit
+}
+```
+
+Used only as an embedded array inside `survey_trackers.questionEvents`. Never stored
+as a top-level collection. `_id` suppressed (`{ _id: false }`) to keep the array lean.
+
+---
 
 ### `survey_responses` — final submitted answers
 
