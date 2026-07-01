@@ -10,18 +10,5 @@ services:
     volumes:
       - mongo_data:/data/db
 
-  survey-site:
-    build: .
-    container_name: survey-site
-    restart: unless-stopped
-    ports:
-      - "3001:3001"
-    environment:
-      MONGODB_URI: mongodb://mongo:27017/calmingbeats-dev
-      JWT_SECRET: defaultSecret
-      SESSION_SECRET: survey-session-secret-change-me
-    depends_on:
-      - mongo
-
 volumes:
   mongo_data:

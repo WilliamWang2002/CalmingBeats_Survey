@@ -332,17 +332,28 @@ Survey_Site/
 ### Strategy
 **Docker for local development only** (production does not use Docker).
 
-Each service has a Dockerfile for local testing with MongoDB:
+For Survey Site local development, Docker should handle **MongoDB only**, matching the backend workflow.
+The Next.js app should run directly with `pnpm dev` for faster iteration.
+
+Why this is the better fit here:
+- Survey content is expected to change often
+- Next.js hot reload is faster outside Docker
+- Matches backend local development pattern already used by the team
+- Reduces container/debugging complexity during the pilot
+
+Each service can still have a Dockerfile for optional containerized smoke testing, but the default local workflow should be Mongo-only Docker.
+
+Example local structure:
 
 ```
 CalmingMoments_backend/              ← Separate repo
 ├── .git
-├── Dockerfile                       # For local dev testing only
+├── Dockerfile                       # Optional smoke-test / production-like build
 └── src/
 
 Survey_Site/                         ← Separate repo
 ├── .git
-├── Dockerfile                       # For local dev testing only
+├── Dockerfile                       # Optional smoke-test / production-like build
 └── src/
 
 SomaBeats/                           ← Meta repo
@@ -351,7 +362,7 @@ SomaBeats/                           ← Meta repo
 └── README.md
 ```
 
-### SomaBeats `docker-compose.yml` (Local Dev)
+### MongoDB `docker-compose.yml` (Local Dev)
 
 ```yaml
 version: '3.8'
@@ -364,26 +375,6 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
-
-  backend:
-    build: ../CalmingMoments_backend  # Build from local source
-    ports:
-      - "3000:3000"
-    environment:
-      DATABASE_URL: mongodb://mongo:27017/<dbname>
-      SECRET: <shared_jwt_secret>
-    depends_on:
-      - mongo
-
-  survey-site:
-    build: ../Survey_Site             # Build from local source
-    ports:
-      - "3001:3001"
-    environment:
-      MONGODB_URI: mongodb://mongo:27017/<dbname>
-      JWT_SECRET: <shared_jwt_secret>
-    depends_on:
-      - mongo
 
 volumes:
   mongo_data:
@@ -416,15 +407,17 @@ CMD ["node", "server.js"]
 ### Local Dev Workflow
 
 ```bash
-# From SomaBeats/ root, with both service repos cloned locally
-docker compose up
+# Start MongoDB only
+docker compose up -d
 
-# Services build from source and start together
-# Access:
-#   MongoDB: localhost:27017
-#   Backend: http://localhost:3000
-#   Survey Site: http://localhost:3001
+# In CalmingMoments_backend/
+pnpm start:dev
+
+# In Survey_Site/
+pnpm dev
 ```
+
+Survey Site should use `MONGODB_URI=mongodb://localhost:27017/calmingbeats-dev` for this workflow.
 
 ---
 
@@ -442,7 +435,7 @@ docker compose up
 
 **Environment variables (`.env.local`):**
 ```
-MONGODB_URI=mongodb://localhost:27017/<dbname>
+MONGODB_URI=mongodb://localhost:27017/calmingbeats-dev
 JWT_SECRET=<same value as CalmingMoments_backend SECRET>
 ```
 

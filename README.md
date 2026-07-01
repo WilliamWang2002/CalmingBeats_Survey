@@ -1,6 +1,6 @@
 # Survey Site
 
-Next.js survey app for CalmingBeats / SomaBeats. It is designed to run locally with Docker and uses the same MongoDB database name as the backend: `calmingbeats-dev`.
+Next.js survey app for CalmingBeats / SomaBeats. It follows the same local development pattern as the backend: Docker runs MongoDB only, and the Next.js app runs directly on your machine. It uses the same MongoDB database name as the backend: `calmingbeats-dev`.
 
 ## What it does
 
@@ -13,12 +13,33 @@ Next.js survey app for CalmingBeats / SomaBeats. It is designed to run locally w
 - Docker Desktop
 - Node.js 20+ and pnpm, if you want to run outside Docker
 
-## Run with Docker
+## Local Development Model
+
+- Docker handles **MongoDB only**
+- Survey Site runs with `pnpm dev`
+- MongoDB database name matches backend local dev: `calmingbeats-dev`
+
+## Start MongoDB with Docker
 
 From the `Survey_Site/` folder:
 
 ```bash
-docker compose up --build
+docker compose up -d
+```
+
+This starts MongoDB on:
+
+```text
+localhost:27017
+```
+
+## Run the Survey Site
+
+From the `Survey_Site/` folder:
+
+```bash
+pnpm install
+pnpm dev
 ```
 
 Then open:
@@ -27,24 +48,14 @@ Then open:
 http://localhost:3001
 ```
 
-This starts:
+## What Docker starts
 
 - MongoDB on `localhost:27017`
-- Survey Site on `localhost:3001`
 
 The app connects to:
 
 ```text
-mongodb://mongo:27017/calmingbeats-dev
-```
-
-## Run without Docker
-
-If you already have MongoDB running locally:
-
-```bash
-pnpm install
-pnpm dev
+mongodb://localhost:27017/calmingbeats-dev
 ```
 
 Make sure `.env.local` points to the backend database name:
@@ -59,3 +70,4 @@ SESSION_SECRET=survey-session-secret-change-me
 
 - For the full auth flow, the backend must also be running because `/start` verifies the backend JWT and checks that token against the backend `users` collection.
 - The survey routes are intentionally separate so content can change often without touching the iOS app.
+- This setup is better for fast survey iteration because Next.js hot reload stays fast and you are not rebuilding an app container for content changes.
