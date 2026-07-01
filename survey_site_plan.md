@@ -13,6 +13,8 @@ Writes to the same MongoDB instance as `CalmingMoments_backend`.
 **Deployment:** WebView can iterate rapidly on survey questions without app store review—deploy
 changes instantly to production.
 
+TODO - add question numbering. + design. use UI kit for tooltips, progress bar, and buttons. content is from cureent survey questions doc. 
+
 ---
 
 ## Key Decisions
@@ -50,7 +52,7 @@ Survey Site verifies JWT at `/start`, sets session cookie, redirects to survey f
     `Authorization: Bearer <token>` on the entry request
   - Survey Site verifies JWT, extracts `userId`, and immediately exchanges to an HttpOnly
     survey session cookie
-- **Fallback (open browser flow): one-time launch code**
+- **Fallback (open browser flow): one-time launch code** - TODO use email
   - iOS requests a short-lived single-use launch code from Survey Site API using Bearer JWT
   - Browser opens `/start?code=...`; Survey Site redeems code, sets HttpOnly cookie, redirects
     to clean `/survey` URL
@@ -90,7 +92,7 @@ Rationale:
 /survey/day-7               → 5-7 questions at Day 7 mark
 /survey/day-14              → 8 questions + NPS at Day 14 mark
 /survey/day-21              → personalization check-in at Day 21
-/survey/post-intervention   → 3 quick questions after an intervention
+/survey/post-intervention (TODO NOT HERE)   → 3 quick questions after an intervention
 /survey/nightly-recap       → 1-2 questions summarizing the day
 ```
 
@@ -154,7 +156,7 @@ as a top-level collection. `_id` suppressed (`{ _id: false }`) to keep the array
 
 ```ts
 {
-  userId:      String,   // from verified JWT
+  userId:      String,   // from verified JWT - TODO query using email from urlparam
   sessionId:   String,   // unique, matches survey_trackers
   responses:   [
     {
@@ -174,7 +176,7 @@ as a top-level collection. `_id` suppressed (`{ _id: false }`) to keep the array
 | Method | Path | Purpose |
 |---|---|---|
 | `GET/POST` | `/start` | Auth entrypoint: token/code exchange -> HttpOnly cookie -> redirect `/survey/[type]` |
-| `POST` | `/api/launch-code` | Browser fallback only: mint short-lived single-use launch code |
+| `POST` | `/api/launch-code` | Browser fallback only: mint short-lived single-use launch code TODO - make sure each link only valid once. Expire after submision |
 | `POST` | `/api/tracker` | Called on page load — creates tracker doc, returns `sessionId` |
 | `POST` | `/api/survey` | Saves responses + all timing events + sets `finalSubmitTime` + records `surveyType` |
 | `GET`  | `/api/survey-result` | Returns responses + tracker for the authenticated user |
@@ -239,7 +241,7 @@ App launch options:
   A) WebView (preferred)
      → open /start with Authorization: Bearer <token>
   B) Open browser fallback
-     → call /api/launch-code with Bearer token
+     → call /api/launch-code with Bearer token (TODO - single-use launch code + email retrive userid)
      → open /start?code=<single-use-code>
 
 /start
