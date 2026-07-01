@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: survey-dev-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  survey-site:
+    build: .
+    container_name: survey-site
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/calmingbeats-dev
+      JWT_SECRET: defaultSecret
+      SESSION_SECRET: survey-session-secret-change-me
+    depends_on:
+      - mongo
+
+volumes:
+  mongo_data:
