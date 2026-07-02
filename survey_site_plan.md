@@ -1,6 +1,6 @@
 # Plan: Survey Site (Next.js)
 
-## Status: Planning complete — implementation not started
+## Status: Implementation in progress — core auth & routes complete, design system setup in progress
 
 ---
 
@@ -13,7 +13,7 @@ Writes to the same MongoDB instance as `CalmingMoments_backend`.
 **Deployment:** WebView can iterate rapidly on survey questions without app store review—deploy
 changes instantly to production.
 
-TODO - add question numbering. + design. use UI kit for tooltips, progress bar, and buttons. content is from cureent survey questions doc. 
+**Design system:** shadcn/ui + Tailwind CSS with theme color #9AD4BD, light background hues, accent #DF8A60. 
 
 ---
 
@@ -41,33 +41,55 @@ TODO - add question numbering. + design. use UI kit for tooltips, progress bar, 
    while keeping session context intact.
 4. **Session continuity:** WKWebView preserves HttpOnly cookies; user never sees authentication details.
 
-**Implementation:** iOS app opens Survey Site URL in `WKWebView` with Bearer JWT in Authorization header.
-Survey Site verifies JWT at `/start`, sets session cookie, redirects to survey form.
+**Implementation:** iOS app opens Survey Site URL in `WKWebView` or sends email link.
+Survey Site looks up user by email at `/start`, sets session cookie, redirects to survey form.
 
 ---
 
-### User Identification
-- **Primary (recommended): WebView flow**
-  - iOS opens Survey Site in `WKWebView` and sends existing CalmingMoments JWT in
-    `Authorization: Bearer <token>` on the entry request
-  - Survey Site verifies JWT, extracts `userId`, and immediately exchanges to an HttpOnly
-    survey session cookie
-- **Fallback (open browser flow): one-time launch code** - TODO use email
-  - iOS requests a short-lived single-use launch code from Survey Site API using Bearer JWT
-  - Browser opens `/start?code=...`; Survey Site redeems code, sets HttpOnly cookie, redirects
-    to clean `/survey` URL
-- Survey Site verifies JWT using the same backend signing secret and checks token is active in
-  `user.token[]` (mirrors backend session-revocation behavior)
-- `userId` is always derived server-side; never accepted from URL/body
+### User Identification (Email-Based)
 
-**Verification logic (Survey Site `src/lib/verifyToken.ts`):**
+**Two distribution channels, both email-backed:**
+
+- **Option 1: In-app WebView (push notification triggered)**
+  - iOS push notification deep-links into Survey Site via WKWebView
+  - URL: `GET /start?email=user@example.com&surveyType=day-7`
+  - Survey Site looks up `users.findOne({ email })` to get `userId`
+  - Validates user hasn't already submitted this `surveyType` (one submission per survey)
+  - Sets HttpOnly session cookie with userId
+  - Redirects to `/survey/day-7`
+
+- **Option 2: Browser link (email-based surveys)**
+  - Backend or iOS requests single-use code from Survey Site: `POST /api/launch-code` with `{ email, surveyType }`
+  - Survey Site generates code, stores in `surveyLaunchCodes` collection with email + surveyType
+  - Backend/email system sends browser link: `/start?email=user@example.com&code=<code>`
+  - User clicks link in email → Survey Site validates email + code + surveyType
+  - Checks user hasn't already submitted this survey
+  - Marks code as used, sets HttpOnly cookie, redirects to `/survey/[surveyType]`
+  - After submission completes, code is permanently invalidated
+
+**Why email-only:**
+- Email is safe to pass in URLs (not a secret like a token)
+- Consistent mechanism across both flows (WebView and email link)
+- Simpler than JWT verification (no signature checks, token revocation lists)
+- Still server-side: `userId` is always looked up from email, never accepted from URL/body
+
+**One submission per survey constraint:**
+- `surveyResponses` unique index on `(userId, surveyType)` prevents duplicate submissions
+- Client-side: check response status before showing survey
+- Server-side: reject submission if already exists
+
+**Email lookup logic (Survey Site `src/lib/auth.ts`):**
 ```
-Authorization: Bearer <token>
-  → verify signature with SECRET + check not expired
-  → decode payload.userId
-  → query users collection: User.findById(userId)
-  → confirm token is in user.token[]
-  → return userId for use in tracker/survey writes
+GET /start?email=user@example.com
+  → query users collection: User.findOne({ email })
+  → if not found: throw 401
+  → return userId for session creation
+
+GET /start?email=user@example.com&code=<code>
+  → query surveyLaunchCodes: findOne({ code, email, used: false, expiresAt > now })
+  → if not found: throw 401
+  → mark code as used: update({ used: true, usedAt: now })
+  → return userId from code record
 ```
 
 ### Database Strategy
@@ -81,31 +103,31 @@ Authorization: Bearer <token>
 **Decision: Each survey type gets its own route (`/survey/day-7`, `/survey/day-14`, etc.).**
 
 Rationale:
-- **Different question sets:** Day 7 (Q1-Q7) vs Day 14 (Q1-Q8, NPS) vs nightly recap (1 quick question)
+- **Different question sets:** Day 7, Day 14, Day 21, nightly recap — each with dedicated Q1-Q5 questions
 - **Easier iteration:** Change one survey's questions without touching others
 - **Analytics clarity:** Recording `surveyType` in responses makes analysis unambiguous
-- **Segment branching:** Each route can check `userSegment` from JWT and render Student vs Working Professional variants
+- **One submission per survey:** Each route enforces `(userId, surveyType)` uniqueness — user cannot retake
 - **A/B testing:** Route to `day-7-v1` vs `day-7-v2` via feature flags, measure conversion difference
 
 **Supported routes:**
 ```
-/survey/day-7               → 5-7 questions at Day 7 mark
-/survey/day-14              → 8 questions + NPS at Day 14 mark
-/survey/day-21              → personalization check-in at Day 21
-/survey/post-intervention (TODO NOT HERE)   → 3 quick questions after an intervention
-/survey/nightly-recap       → 1-2 questions summarizing the day
+/survey/day-7               → Questions Q1-Q5 at Day 7 mark
+/survey/day-14              → Questions Q1-Q5 at Day 14 mark
+/survey/day-21              → Questions Q1-Q5 at Day 21 mark
+/survey/nightly-recap       → Quick check-in question
 ```
 
 Each route:
-- Receives `sessionId`, `calmScore`, `interventionCount`, `userSegment` via query params or JWT payload
+- Receives `sessionId`, `calmScore`, `interventionCount`, `userSegment` via query params
 - Posts responses to `/api/survey` with `surveyType` field in payload
+- Validates user hasn't already submitted this survey (one-per-user enforcement)
 - Can version independently (e.g., `day-7-v2` for A/B test)
 
-### Survey Trigger
-- Survey is initiated exclusively via deep-link from the CalmingBeats iOS frontend
-- No in-app auth flow on the survey site itself
-- One survey session per link click (identified by `sessionId` uuid)
-- iOS scheduler determines *when* to trigger (Day 7, nightly, post-intervention); Survey Site is reactive
+### Survey Trigger & Distribution
+- **Option 1 (in-app):** iOS push notification deep-links to WebView at scheduled time (Day 7, Day 14, Day 21, nightly)
+- **Option 2 (email):** Backend generates launch code, sends email link (user clicks to browser)
+- **One submission per survey:** User cannot retake once submitted (enforced by unique `(userId, surveyType)` constraint)
+- Survey Site is reactive: triggers only when user visits link (via push or email click)
 
 ---
 
@@ -115,7 +137,7 @@ Each route:
 
 ```ts
 {
-  userId:          String,             // MongoDB ObjectId string from verified JWT
+  userId:          String,             // MongoDB ObjectId string from email lookup
   sessionId:       String,             // uuid, unique — joins to survey_responses
   surveyOpenTime:  Date,               // recorded on page load
   questionEvents:  [QuestionEvent],    // append-only log, never overwritten or merged
@@ -156,7 +178,7 @@ as a top-level collection. `_id` suppressed (`{ _id: false }`) to keep the array
 
 ```ts
 {
-  userId:      String,   // from verified JWT - TODO query using email from urlparam
+  userId:      String,   // looked up server-side from email, never accepted from URL
   sessionId:   String,   // unique, matches survey_trackers
   responses:   [
     {
@@ -175,8 +197,8 @@ as a top-level collection. `_id` suppressed (`{ _id: false }`) to keep the array
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET/POST` | `/start` | Auth entrypoint: token/code exchange -> HttpOnly cookie -> redirect `/survey/[type]` |
-| `POST` | `/api/launch-code` | Browser fallback only: mint short-lived single-use launch code TODO - make sure each link only valid once. Expire after submision |
+| `GET/POST` | `/start` | Auth entrypoint: email lookup or code redemption -> HttpOnly cookie -> redirect `/survey/[type]` |
+| `POST` | `/api/launch-code` | Browser fallback: mint single-use code (expires 60 sec, invalidated after submission) |
 | `POST` | `/api/tracker` | Called on page load — creates tracker doc, returns `sessionId` |
 | `POST` | `/api/survey` | Saves responses + all timing events + sets `finalSubmitTime` + records `surveyType` |
 | `GET`  | `/api/survey-result` | Returns responses + tracker for the authenticated user |
@@ -186,15 +208,16 @@ as a top-level collection. `_id` suppressed (`{ _id: false }`) to keep the array
 HttpOnly cookie session.
 
 ### GET/POST /start
-- **WKWebView mode:** receives Bearer JWT, verifies, sets cookie, redirects to `/survey/[type]?sessionId=X&calmScore=Y`
-- **Browser mode (fallback):** receives one-time `code`, redeems, sets cookie, redirects to `/survey/[type]?sessionId=X&calmScore=Y`
+- **Option 1 (WebView):** receives `?email=user@example.com`, looks up user, sets cookie, redirects to `/survey/[type]?sessionId=X&calmScore=Y`
+- **Option 2 (Browser email link):** receives `?email=user@example.com&code=<code>`, validates both, marks code used, sets cookie, redirects to survey
 
 Query params supplied by iOS app before deep-linking; Survey Site reads them to populate context in forms.
 
 ### POST /api/launch-code
-**Header:** `Authorization: Bearer <token>`
-**Use case:** open-browser fallback only
-**Response:** `{ "code": "<single-use-code>", "expiresInSec": 60 }`
+**Caller:** Backend or iOS (not user-facing)
+**Request body:** `{ "email": "user@example.com", "surveyType": "day-7" }`
+**Response:** `{ "code": "<single-use-code>", "email": "user@example.com", "surveyType": "day-7", "expiresInSec": 600 }`
+**Use case:** Generate single-use codes for email-based survey distribution
 
 ### POST /api/tracker
 **Auth:** HttpOnly cookie (from `/start`)
@@ -237,17 +260,25 @@ The frontend tracks events locally and sends everything on final submit (batched
 Identity is exchanged once at `/start`; survey APIs then use only HttpOnly cookie session.
 
 ```
-App launch options:
-  A) WebView (preferred)
-     → open /start with Authorization: Bearer <token>
-  B) Open browser fallback
-     → call /api/launch-code with Bearer token (TODO - single-use launch code + email retrive userid)
-     → open /start?code=<single-use-code>
+Option 1: In-app WebView (push notification)
+  Push notification → deep-link /start?email=user@example.com&surveyType=day-7
+  → Survey Site looks up email → validates not already submitted
+  → sets cookie, redirects to /survey/day-7
+
+Option 2: Browser email link (backend-initiated)
+  Backend/email system → POST /api/launch-code { email, surveyType }
+  → Survey Site generates single-use code
+  → Backend sends email: /start?email=user@example.com&code=<code>
+  → User clicks link
+  → Survey Site validates email + code + surveyType, marks used
+  → sets cookie, redirects to /survey/[surveyType]
 
 /start
-  → verify token or redeem code
+  → look up user by email
+  → if code provided: redeem and validate (mark used)
+  → check surveyType: user hasn't already submitted
   → set HttpOnly survey session cookie
-  → redirect to /survey
+  → redirect to /survey/[surveyType]
 
 Page mounts (/survey)
   → record surveyOpenTime = Date.now()
@@ -273,8 +304,8 @@ Batched design chosen over incremental (one call per question) because:
 
 ```
 Survey_Site/
-├── .env.local                      # MONGODB_URI, JWT_SECRET
-├── next.config.ts
+├── .env.local                      # MONGODB_URI
+├── next.config.mjs
 ├── package.json
 ├── tsconfig.json
 ├── Dockerfile
@@ -315,7 +346,7 @@ Survey_Site/
 │   │
 │   ├── lib/
 │   │   ├── mongodb.ts              # Mongoose singleton (Next.js hot-reload safe)
-│   │   ├── verifyToken.ts          # JWT verify + session-active check (mirrors backend strategy)
+│   │   ├── auth.ts                 # Email lookup + launch code verification
 │   │   ├── session.ts              # Issue/verify HttpOnly survey session cookie
 │   │   └── models/
 │   │       ├── SurveyTracker.ts
@@ -407,7 +438,7 @@ EXPOSE 3001
 CMD ["node", "server.js"]
 ```
 
-> Requires `output: 'standalone'` in `next.config.ts` to enable standalone build output.
+> Requires `output: 'standalone'` in `next.config.mjs` to enable standalone build output.
 
 ### Local Dev Workflow
 
@@ -435,15 +466,15 @@ Do not start MongoDB separately from `Survey_Site/`.
 | `mongoose` | MongoDB ODM |
 | `uuid` | Generate `sessionId` |
 | `zod` | Request body validation |
-| `jose` | JWT verification (same secret as CalmingMoments backend) |
 | `cookie` | Parse/set cookie headers for session exchange |
 | `swagger-ui-react` | Swagger UI at `/api/docs` |
 | `next` `react` `react-dom` | Framework |
+| `shadcn/ui` | Accessible component library |
+| `tailwindcss` | Utility-first CSS |
 
 **Environment variables (`.env.local`):**
 ```
 MONGODB_URI=mongodb://localhost:27017/calmingbeats-dev
-JWT_SECRET=<same value as CalmingMoments_backend SECRET>
 ```
 
 ---
@@ -470,22 +501,37 @@ JWT_SECRET=<same value as CalmingMoments_backend SECRET>
 
 ---
 
+---
+
+## Design System
+
+### Color Palette
+- **Theme (Primary):** #9AD4BD
+- **Background:** Very light hue of theme (e.g., #F5FAF9)
+- **Accent (Pop):** #DF8A60
+- **Supporting:** Light monotone grays
+
+### Component Library
+- **Framework:** shadcn/ui + Tailwind CSS
+- **Key components:** `button`, `card`, `radio-group`, `progress`, `tooltip`
+- **Customization:** Tailwind config with theme color palette
+
+### Survey Content
+- **Day 7, 14, 21 questions:** Defined in `content_doc/` (Q1-Q5 per survey)
+- **Implementation:** Parse content into `src/lib/surveys.ts` structured format
+- **Nightly recap:** Quick single-question check-in (defined separately)
+
+---
+
 ## Open Items
 
-- [ ] **Survey question set must be finalized per survey type** — defines route structure and response schema
-      - Day 7 questions (Q1-Q7)
-      - Day 14 questions (Q1-Q8 + NPS)
-      - Day 21 questions
-      - Post-intervention questions
-      - Nightly recap question(s)
-- [ ] Decide if survey can be re-taken (currently: one doc per sessionId, multiple sessions
-      per userId are allowed — no enforcement of one-per-user)
-- [ ] Confirm MongoDB database name (must match `CalmingMoments_backend` DATABASE_URL)
-- [ ] Confirm shared signing secret mapping (`CalmingMoments_backend: SECRET` -> `Survey_Site: JWT_SECRET`)
-- [ ] Implement `/start` exchange route and HttpOnly cookie session helper
-- [ ] Decide whether browser fallback (`/api/launch-code`) ships in v1 or later
-- [ ] Add `output: 'standalone'` to `next.config.ts` before building Docker image
-- [ ] Create `Survey_Site/Dockerfile` (multi-stage Next.js build as shown above)
-- [ ] Create root `SomaBeats/docker-compose.yml` (orchestrates services locally)
-- [ ] Update `SomaBeats/README.md` with developer onboarding steps
-- [ ] Design variant routing for A/B testing (feature flags or query param)
+- [ ] **Setup shadcn/ui + Tailwind** — Initialize design system with color palette
+- [ ] **Parse survey content** into structured format in `src/lib/surveys.ts`
+- [ ] **Implement email-based auth** in `/start` and `/api/launch-code` routes
+- [ ] **Single-use code enforcement** — Mark code as used after submission completes
+- [ ] **Create survey form components** (question card, progress bar, submit button)
+- [ ] **Add tooltips and question numbering** per design spec
+- [x] **Prevent re-takes:** One submission per `(userId, surveyType)` via unique index + server-side validation
+- [ ] **Design variant routing** for A/B testing (feature flags or query param)
+- [ ] **Create root `SomaBeats/docker-compose.yml`** (orchestrates services locally)
+- [ ] **Update `SomaBeats/README.md`** with developer onboarding steps
