@@ -518,6 +518,8 @@ Expected each time:
 
 Generate launch code:
 
+powershell
+
 ```powershell
 $body = @{ email = "e2e-launch-code-user@example.com"; surveyType = "nightly-recap" } | ConvertTo-Json
 $resp = Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/launch-code -ContentType application/json -Body $body
