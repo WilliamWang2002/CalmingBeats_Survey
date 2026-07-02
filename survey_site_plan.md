@@ -1,6 +1,6 @@
 # Plan: Survey Site (Next.js)
 
-## Status: Core implementation complete — content synced, design system live, minor UX/docs follow-ups remaining
+## Status: Core implementation complete — duplicate-submission UX and tracker mapping upgraded; e2e stabilization pending
 
 ---
 
@@ -14,6 +14,12 @@ Writes to the same MongoDB instance as `CalmingMoments_backend`.
 changes instantly to production.
 
 **Design system:** shadcn/ui + Tailwind CSS with theme color #9AD4BD, light background hues, accent #DF8A60. 
+
+**Recent updates (implemented):**
+- Added dedicated already-submitted page at `/already-submitted`
+- `GET /start` now redirects already-submitted users to `/already-submitted?surveyType=...`
+- Direct survey routes (`/survey/day-7`, `/survey/day-14`, `/survey/day-21`, `/survey/nightly-recap`) now check session + submission state server-side and redirect before form render
+- `surveyTrackers` now stores `surveyType` (write-on-create from trusted session payload)
 
 ---
 
@@ -139,6 +145,7 @@ Each route:
 {
   userId:          String,             // MongoDB ObjectId string from email lookup
   sessionId:       String,             // uuid, unique — joins to survey_responses
+  surveyType:      String,             // day-7 | day-14 | day-21 | nightly-recap | post-intervention
   surveyOpenTime:  Date,               // recorded on page load
   questionEvents:  [QuestionEvent],    // append-only log, never overwritten or merged
   finalSubmitTime: Date | null,        // null if user abandoned
@@ -222,6 +229,7 @@ Query params supplied by iOS app before deep-linking; Survey Site reads them to 
 ### POST /api/tracker
 **Auth:** HttpOnly cookie (from `/start`)
 **Request body:** `{}`
+**Behavior:** Creates tracker row with `userId`, `sessionId`, and `surveyType` from session payload.
 **Response:**
 ```json
 { "sessionId": "<uuid>" }
@@ -530,6 +538,10 @@ MONGODB_URI=mongodb://localhost:27017/calmingbeats-dev
 - [x] **Create survey form components** with typed rendering (single/multi/slider/text)
 - [x] **Question numbering + progress bar** implemented in the form UI
 - [x] **Prevent re-takes:** One submission per `(userId, surveyType)` via unique index + server-side validation
+- [x] **Already-submitted UX page:** Added `/already-submitted` with redirect before survey load (via `/start` and direct survey route guards)
+- [x] **Tracker survey labeling:** `surveyTrackers.surveyType` persisted for easier analytics/debugging
+- [ ] **Fix Playwright e2e submit-disabled issue** in `tests/e2e/survey-submit.spec.ts` (unit + integration are green)
+- [ ] **Fix `test:all` command chaining on Windows shell** so one command executes unit + integration + e2e reliably
 - [ ] **Optional: Design variant routing** for A/B testing (feature flags or query param)
 - [ ] **Optional: Convert Day 7 segment selector into a dedicated intro step** (currently included as first required question)
 - [ ] **Optional: Plan/docs consistency pass** across root docs and onboarding notes
