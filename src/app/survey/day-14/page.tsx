@@ -1,11 +1,14 @@
 import SurveyForm from "@/components/SurveyForm";
+import { redirectIfAlreadySubmitted } from "@/lib/survey-page-guard";
 import { SURVEYS } from "@/lib/surveys";
 
-export default function Day14Page({
+export default async function Day14Page({
   searchParams
 }: {
   searchParams: { calmScore?: string; interventionCount?: string; userSegment?: string; variant?: string };
 }) {
+  await redirectIfAlreadySubmitted("day-14");
+
   return (
     <SurveyForm
       surveyType="day-14"

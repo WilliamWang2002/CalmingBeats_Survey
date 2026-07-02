@@ -7,7 +7,7 @@
 # Test info
 
 - Name: survey-submit.spec.ts >> launch-code email flow can redeem code, submit survey, and mark code used
-- Location: tests\e2e\survey-submit.spec.ts:117:5
+- Location: tests\e2e\survey-submit.spec.ts:118:5
 
 # Error details
 
@@ -34,7 +34,6 @@ Call log:
 # Test source
 
 ```ts
-  52  | });
   53  | 
   54  | test.afterAll(async () => {
   55  |   await mongoose.disconnect();
@@ -96,63 +95,64 @@ Call log:
   111 |   });
   112 | 
   113 |   expect(tracker).toBeTruthy();
-  114 |   expect(tracker?.finalSubmitTime).toBeTruthy();
-  115 | });
-  116 | 
-  117 | test("launch-code email flow can redeem code, submit survey, and mark code used", async ({ page, request }) => {
-  118 |   const codeResponse = await request.post("/api/launch-code", {
-  119 |     data: {
-  120 |       email: LAUNCH_CODE_EMAIL,
-  121 |       surveyType: "nightly-recap"
-  122 |     }
-  123 |   });
-  124 |   expect(codeResponse.ok()).toBe(true);
-  125 |   const codeBody = await codeResponse.json();
-  126 | 
-  127 |   const startResponse = await request.get(
-  128 |     `/start?email=${encodeURIComponent(LAUNCH_CODE_EMAIL)}&code=${encodeURIComponent(codeBody.code)}`
-  129 |     , { maxRedirects: 0 }
-  130 |   );
-  131 |   expect(startResponse.status()).toBe(307);
-  132 | 
-  133 |   const sessionCookie = extractSurveySessionCookie(startResponse.headers()["set-cookie"]);
-  134 |   const location = startResponse.headers()["location"];
-  135 | 
-  136 |   await page.context().addCookies([
-  137 |     {
-  138 |       name: "survey_session",
-  139 |       value: sessionCookie,
-  140 |       url: BASE_URL,
-  141 |       httpOnly: true,
-  142 |       sameSite: "Lax"
-  143 |     }
-  144 |   ]);
-  145 | 
-  146 |   await page.goto(location);
-  147 |   await expect(page).toHaveURL(/\/survey\/nightly-recap/);
-  148 |   await expect(page.getByText("Initializing...")).toHaveCount(0);
-  149 |   await page.getByTestId("q1-option-4").click();
-  150 | 
-  151 |   const submitButton = page.getByRole("button", { name: "Submit Survey" });
-> 152 |   await expect(submitButton).toBeEnabled();
+  114 |   expect(tracker?.surveyType).toBe("nightly-recap");
+  115 |   expect(tracker?.finalSubmitTime).toBeTruthy();
+  116 | });
+  117 | 
+  118 | test("launch-code email flow can redeem code, submit survey, and mark code used", async ({ page, request }) => {
+  119 |   const codeResponse = await request.post("/api/launch-code", {
+  120 |     data: {
+  121 |       email: LAUNCH_CODE_EMAIL,
+  122 |       surveyType: "nightly-recap"
+  123 |     }
+  124 |   });
+  125 |   expect(codeResponse.ok()).toBe(true);
+  126 |   const codeBody = await codeResponse.json();
+  127 | 
+  128 |   const startResponse = await request.get(
+  129 |     `/start?email=${encodeURIComponent(LAUNCH_CODE_EMAIL)}&code=${encodeURIComponent(codeBody.code)}`
+  130 |     , { maxRedirects: 0 }
+  131 |   );
+  132 |   expect(startResponse.status()).toBe(307);
+  133 | 
+  134 |   const sessionCookie = extractSurveySessionCookie(startResponse.headers()["set-cookie"]);
+  135 |   const location = startResponse.headers()["location"];
+  136 | 
+  137 |   await page.context().addCookies([
+  138 |     {
+  139 |       name: "survey_session",
+  140 |       value: sessionCookie,
+  141 |       url: BASE_URL,
+  142 |       httpOnly: true,
+  143 |       sameSite: "Lax"
+  144 |     }
+  145 |   ]);
+  146 | 
+  147 |   await page.goto(location);
+  148 |   await expect(page).toHaveURL(/\/survey\/nightly-recap/);
+  149 |   await expect(page.getByText("Initializing...")).toHaveCount(0);
+  150 |   await page.getByTestId("q1-option-4").click();
+  151 | 
+  152 |   const submitButton = page.getByRole("button", { name: "Submit Survey" });
+> 153 |   await expect(submitButton).toBeEnabled();
       |                              ^ Error: expect(locator).toBeEnabled() failed
-  153 |   await submitButton.click();
-  154 | 
-  155 |   await expect(page.getByText("Thank you!")).toBeVisible();
-  156 | 
-  157 |   const db = mongoose.connection.db;
-  158 |   if (!db) throw new Error("Mongo DB is not connected");
-  159 | 
-  160 |   const user = await db.collection("users").findOne({ email: LAUNCH_CODE_EMAIL });
-  161 |   const response = await db.collection("surveyResponses").findOne({
-  162 |     userId: String(user?._id),
-  163 |     surveyType: "nightly-recap"
-  164 |   });
-  165 |   const launchCode = await db.collection("surveyLaunchCodes").findOne({ code: codeBody.code });
-  166 | 
-  167 |   expect(response).toBeTruthy();
-  168 |   expect(launchCode?.used).toBe(true);
-  169 |   expect(launchCode?.usedAt).toBeTruthy();
-  170 | });
-  171 | 
+  154 |   await submitButton.click();
+  155 | 
+  156 |   await expect(page.getByText("Thank you!")).toBeVisible();
+  157 | 
+  158 |   const db = mongoose.connection.db;
+  159 |   if (!db) throw new Error("Mongo DB is not connected");
+  160 | 
+  161 |   const user = await db.collection("users").findOne({ email: LAUNCH_CODE_EMAIL });
+  162 |   const response = await db.collection("surveyResponses").findOne({
+  163 |     userId: String(user?._id),
+  164 |     surveyType: "nightly-recap"
+  165 |   });
+  166 |   const launchCode = await db.collection("surveyLaunchCodes").findOne({ code: codeBody.code });
+  167 | 
+  168 |   expect(response).toBeTruthy();
+  169 |   expect(launchCode?.used).toBe(true);
+  170 |   expect(launchCode?.usedAt).toBeTruthy();
+  171 | });
+  172 | 
 ```

@@ -37,8 +37,7 @@ export function buildSessionSetCookieHeader(token: string): string {
   });
 }
 
-export async function getSurveySessionFromRequest(req: NextRequest): Promise<SurveySessionPayload> {
-  const cookieHeader = req.headers.get("cookie") ?? "";
+export async function getSurveySessionFromCookieHeader(cookieHeader: string): Promise<SurveySessionPayload> {
   const cookies = parse(cookieHeader);
   const token = cookies[COOKIE_NAME];
   if (!token) {
@@ -56,6 +55,11 @@ export async function getSurveySessionFromRequest(req: NextRequest): Promise<Sur
     surveyType: payload.surveyType ? (String(payload.surveyType) as SurveyType) : undefined,
     launchCode: payload.launchCode ? String(payload.launchCode) : undefined
   };
+}
+
+export async function getSurveySessionFromRequest(req: NextRequest): Promise<SurveySessionPayload> {
+  const cookieHeader = req.headers.get("cookie") ?? "";
+  return getSurveySessionFromCookieHeader(cookieHeader);
 }
 
 export async function getSessionUserIdFromRequest(req: NextRequest): Promise<string> {
