@@ -17,7 +17,7 @@ changes instantly to production.
 
 **Recent updates (implemented):**
 - Added dedicated already-submitted page at `/already-submitted`
-- `GET /start` now redirects already-submitted users to `/already-submitted?surveyType=...`
+- `GET /start` now redirects already-submitted users to `/already-submitted`
 - Direct survey routes (`/survey/day-7`, `/survey/day-14`, `/survey/day-21`, `/survey/nightly-recap`) now check session + submission state server-side and redirect before form render
 - `surveyTrackers` now stores `surveyType` (write-on-create from trusted session payload)
 
@@ -462,6 +462,135 @@ pnpm dev
 
 Survey Site should use `MONGODB_URI=mongodb://localhost:27017/calmingbeats-dev` for this workflow.
 Do not start MongoDB separately from `Survey_Site/`.
+
+---
+
+## Testing Procedure (Current)
+
+This section defines the full current test process for local verification.
+
+### Test Identity and Survey Types
+
+- Primary test email used: `e2e-launch-code-user@example.com`
+- Current valid `surveyType` options:
+  - `day-7`
+  - `day-14`
+  - `day-21`
+  - `nightly-recap`
+
+### 1) Prerequisites
+
+1. Start MongoDB from `CalmingMoments_backend/`:
+  - `docker compose up -d`
+2. Start Survey Site from `Survey_Site/`:
+  - `pnpm install`
+  - `pnpm dev`
+3. Open app base URL:
+  - `http://localhost:3000`
+
+### 2) Seed/Verify Test User
+
+Ensure a user exists in `users` collection:
+
+```js
+{ "email": "e2e-launch-code-user@example.com", "token": [], "createdAt": new Date() }
+```
+
+Without this, `/start` will fail user lookup.
+
+### 3) Manual Test Matrix (All surveyType options)
+
+Run these links one by one (in a clean session where needed):
+
+1. `http://localhost:3000/start?email=e2e-launch-code-user@example.com&surveyType=day-7`
+2. `http://localhost:3000/start?email=e2e-launch-code-user@example.com&surveyType=day-14`
+3. `http://localhost:3000/start?email=e2e-launch-code-user@example.com&surveyType=day-21`
+4. `http://localhost:3000/start?email=e2e-launch-code-user@example.com&surveyType=nightly-recap`
+
+Expected each time:
+
+- Redirect to the matching `/survey/<surveyType>` route
+- `Initializing...` clears after tracker creation
+- Submit button enables after required answers are completed
+- Submit succeeds and thank-you state appears
+
+### 4) One-Time Code Flow (Browser Link)
+
+Generate launch code:
+
+```powershell
+$body = @{ email = "e2e-launch-code-user@example.com"; surveyType = "nightly-recap" } | ConvertTo-Json
+$resp = Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/launch-code -ContentType application/json -Body $body
+```
+
+macOS (zsh/bash) alternative:
+
+```bash
+curl -s -X POST "http://localhost:3000/api/launch-code" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"e2e-launch-code-user@example.com","surveyType":"nightly-recap"}'
+```
+
+Optional: extract only code on macOS with `jq`:
+
+```bash
+CODE=$(curl -s -X POST "http://localhost:3000/api/launch-code" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"e2e-launch-code-user@example.com","surveyType":"nightly-recap"}' | jq -r '.code')
+echo "$CODE"
+```
+
+Open code link:
+
+```text
+http://localhost:3000/start?email=e2e-launch-code-user@example.com&code=<PASTE_CODE>
+```
+
+Expected:
+
+- Redirect into survey
+- Submission works
+- Launch code transitions to `used: true` with `usedAt` set after successful submit
+
+### 5) Duplicate Submission Behavior
+
+After a successful submission for a given user + surveyType:
+
+1. Re-open the same `/start?...` link for that surveyType.
+2. Refresh direct survey URL if already on page.
+
+Expected:
+
+- Redirect to `/already-submitted` before survey form use.
+
+### 6) Negative Checks
+
+1. Invalid code:
+  - Use fake `code` in `/start?...&code=...`
+  - Expect 401 style rejection.
+2. Expired code:
+  - Wait past TTL (600s currently) and retry
+  - Expect rejection.
+3. Missing user:
+  - Use unknown email
+  - Expect user lookup failure.
+
+### 7) Automated Tests
+
+From `Survey_Site/`:
+
+1. Unit tests:
+  - `pnpm run test:unit`
+2. Integration tests:
+  - `pnpm run test:integration`
+3. E2E tests:
+  - `pnpm run test:e2e`
+
+Current known status target:
+
+- Unit: expected passing
+- Integration: expected passing
+- E2E: currently has known submit-enabled issue under investigation
 
 ---
 

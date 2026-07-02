@@ -100,17 +100,35 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
   const [submitStatus, setSubmitStatus] = useState<"idle" | "error" | "done">("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [initError, setInitError] = useState<string>("");
+  const trackerInitPromiseRef = useRef<Promise<string> | null>(null);
 
   useEffect(() => {
-    fetch("/api/tracker", { method: "POST" })
-      .then(async (res) => {
-        if (!res.ok) throw new Error("Failed to initialize tracker session");
+    if (!trackerInitPromiseRef.current) {
+      trackerInitPromiseRef.current = fetch("/api/tracker", { method: "POST" }).then(async (res) => {
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error ?? "Failed to initialize tracker session");
+        }
         const data = (await res.json()) as { sessionId: string };
-        setSessionId(data.sessionId);
+        return data.sessionId;
+      });
+    }
+
+    let isActive = true;
+    trackerInitPromiseRef.current
+      .then((id) => {
+        if (isActive) setSessionId(id);
       })
       .catch((err: unknown) => {
-        setInitError(err instanceof Error ? err.message : "Failed to initialize");
+        if (isActive) {
+          setInitError(err instanceof Error ? err.message : "Failed to initialize");
+        }
+        trackerInitPromiseRef.current = null;
       });
+
+    return () => {
+      isActive = false;
+    };
   }, []);
 
   const answeredCount = useMemo(

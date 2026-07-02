@@ -20,6 +20,6 @@ export async function redirectIfAlreadySubmitted(surveyType: SurveyType): Promis
   }
 
   if (alreadySubmitted) {
-    redirect(`/already-submitted?surveyType=${encodeURIComponent(surveyType)}`);
+    redirect("/already-submitted");
   }
 }

@@ -1,9 +1,4 @@
-type AlreadySubmittedPageProps = {
-  searchParams: { surveyType?: string };
-};
-
-export default function AlreadySubmittedPage({ searchParams }: AlreadySubmittedPageProps) {
-  void searchParams;
+export default function AlreadySubmittedPage() {
 
   return (
     <main>

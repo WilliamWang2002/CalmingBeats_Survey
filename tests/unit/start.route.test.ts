@@ -84,6 +84,6 @@ describe("/start route unit", () => {
 
     const res = await GET(req);
     expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toContain("/already-submitted?surveyType=day-7");
+    expect(res.headers.get("location")).toContain("/already-submitted");
   });
 });

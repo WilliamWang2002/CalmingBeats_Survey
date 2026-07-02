@@ -41,9 +41,8 @@ function buildTargetPath(req: NextRequest, surveyType: SurveyType): string {
   return `/survey/${surveyType}${search ? `?${search}` : ""}`;
 }
 
-function buildAlreadySubmittedPath(surveyType: SurveyType): string {
-  const params = new URLSearchParams({ surveyType });
-  return `/already-submitted?${params.toString()}`;
+function buildAlreadySubmittedPath(): string {
+  return "/already-submitted";
 }
 
 async function readEmail(req: NextRequest, bodyEmail?: string | null): Promise<string> {
@@ -117,7 +116,7 @@ export async function GET(req: NextRequest) {
     return res;
   } catch (error) {
     if (error instanceof SurveyAlreadySubmittedError) {
-      const redirectUrl = new URL(buildAlreadySubmittedPath(error.surveyType), req.nextUrl.origin);
+      const redirectUrl = new URL(buildAlreadySubmittedPath(), req.nextUrl.origin);
       return NextResponse.redirect(redirectUrl);
     }
 
