@@ -6,6 +6,15 @@ import { buildSessionSetCookieHeader, createSurveySessionToken } from "@/lib/ses
 import { isSurveyType, SurveyType } from "@/lib/surveys";
 import { getUserIdByEmail, hasSubmittedSurvey, normalizeEmail } from "@/lib/auth";
 
+class SurveyAlreadySubmittedError extends Error {
+  surveyType: SurveyType;
+
+  constructor(surveyType: SurveyType) {
+    super("Survey already submitted");
+    this.surveyType = surveyType;
+  }
+}
+
 function readSurveyType(input: string | null | undefined): SurveyType {
   if (input && isSurveyType(input)) {
     return input;
@@ -30,6 +39,11 @@ function buildTargetPath(req: NextRequest, surveyType: SurveyType): string {
 
   const search = params.toString();
   return `/survey/${surveyType}${search ? `?${search}` : ""}`;
+}
+
+function buildAlreadySubmittedPath(surveyType: SurveyType): string {
+  const params = new URLSearchParams({ surveyType });
+  return `/already-submitted?${params.toString()}`;
 }
 
 async function readEmail(req: NextRequest, bodyEmail?: string | null): Promise<string> {
@@ -79,7 +93,7 @@ async function resolveStart(req: NextRequest, explicitSurveyType: SurveyType | u
   const userId = await getUserIdByEmail(email);
   const alreadySubmitted = await hasSubmittedSurvey(userId, surveyType);
   if (alreadySubmitted) {
-    throw new Error("Survey already submitted");
+    throw new SurveyAlreadySubmittedError(surveyType);
   }
 
   return { userId, code, surveyType };
@@ -102,8 +116,13 @@ export async function GET(req: NextRequest) {
     res.headers.append("Set-Cookie", buildSessionSetCookieHeader(sessionToken));
     return res;
   } catch (error) {
+    if (error instanceof SurveyAlreadySubmittedError) {
+      const redirectUrl = new URL(buildAlreadySubmittedPath(error.surveyType), req.nextUrl.origin);
+      return NextResponse.redirect(redirectUrl);
+    }
+
     const message = error instanceof Error ? error.message : "Unauthorized";
-    const status = message === "Survey already submitted" ? 409 : 401;
+    const status = 401;
     return NextResponse.json({ error: message }, { status });
   }
 }

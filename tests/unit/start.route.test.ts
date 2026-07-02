@@ -77,13 +77,13 @@ describe("/start route unit", () => {
     await expect(res.json()).resolves.toEqual({ error: "Missing email" });
   });
 
-  it("returns 409 when the survey was already submitted", async () => {
+  it("redirects to already-submitted page when the survey was already submitted", async () => {
     hasSubmittedSurvey.mockResolvedValue(true);
     const { GET } = await import("@/app/start/route");
     const req = new NextRequest("http://localhost/start?email=test@example.com&surveyType=day-7");
 
     const res = await GET(req);
-    expect(res.status).toBe(409);
-    await expect(res.json()).resolves.toEqual({ error: "Survey already submitted" });
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/already-submitted?surveyType=day-7");
   });
 });

@@ -1,4 +1,5 @@
 import mongoose, { Model, Schema } from "mongoose";
+import { SURVEY_TYPES, SurveyType } from "@/lib/surveys";
 
 export type QuestionEvent = {
   questionId: string;
@@ -9,6 +10,7 @@ export type QuestionEvent = {
 export type SurveyTracker = {
   userId: string;
   sessionId: string;
+  surveyType: SurveyType;
   surveyOpenTime: Date;
   questionEvents: QuestionEvent[];
   finalSubmitTime: Date | null;
@@ -28,6 +30,7 @@ const SurveyTrackerSchema = new Schema<SurveyTracker>(
   {
     userId: { type: String, required: true, index: true },
     sessionId: { type: String, required: true, unique: true, index: true },
+    surveyType: { type: String, required: true, enum: SURVEY_TYPES, index: true },
     surveyOpenTime: { type: Date, required: true, default: () => new Date() },
     questionEvents: { type: [QuestionEventSchema], default: [] },
     finalSubmitTime: { type: Date, default: null },

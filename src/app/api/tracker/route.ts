@@ -2,17 +2,23 @@ import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { connectMongo } from "@/lib/mongodb";
 import { SurveyTrackerModel } from "@/lib/models/SurveyTracker";
-import { getSessionUserIdFromRequest } from "@/lib/session";
+import { getSurveySessionFromRequest } from "@/lib/session";
 
 export async function POST(req: NextRequest) {
   try {
-    const userId = await getSessionUserIdFromRequest(req);
+    const session = await getSurveySessionFromRequest(req);
+    if (!session.surveyType) {
+      return NextResponse.json({ error: "Missing survey type in session" }, { status: 400 });
+    }
+
+    const userId = session.userId;
     await connectMongo();
 
     const sessionId = randomUUID();
     await SurveyTrackerModel.create({
       userId,
       sessionId,
+      surveyType: session.surveyType,
       surveyOpenTime: new Date(),
       questionEvents: [],
       finalSubmitTime: null,

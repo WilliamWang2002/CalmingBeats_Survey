@@ -82,6 +82,7 @@ describe("/start and /api/tracker integration", () => {
     });
 
     expect(tracker).toBeTruthy();
+    expect(tracker?.surveyType).toBe("nightly-recap");
     expect(tracker?.finalSubmitTime).toBeNull();
   });
 });

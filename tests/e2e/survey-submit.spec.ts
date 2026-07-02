@@ -4,8 +4,17 @@ import mongoose from "mongoose";
 const MONGO_URI =
   process.env.E2E_MONGODB_URI ??
   "mongodb://localhost:27017/calmingbeats-dev?replicaSet=rs0&directConnection=true";
+const BASE_URL = `http://127.0.0.1:${process.env.E2E_PORT ?? 3100}`;
 const WEBVIEW_EMAIL = "e2e-survey-user@example.com";
 const LAUNCH_CODE_EMAIL = "e2e-launch-code-user@example.com";
+
+function extractSurveySessionCookie(setCookieHeader: string | undefined) {
+  const match = setCookieHeader?.match(/survey_session=([^;]+)/);
+  if (!match) {
+    throw new Error("Missing survey_session cookie in Set-Cookie header");
+  }
+  return match[1];
+}
 
 async function resetDb() {
   const db = mongoose.connection.db;
@@ -46,9 +55,27 @@ test.afterAll(async () => {
   await mongoose.disconnect();
 });
 
-test("webview-style start route can submit nightly recap and persist data", async ({ page }) => {
-  await page.goto(`/start?email=${encodeURIComponent(WEBVIEW_EMAIL)}&surveyType=nightly-recap`);
+test("webview-style start route can submit nightly recap and persist data", async ({ page, request }) => {
+  const startResponse = await request.get(
+    `/start?email=${encodeURIComponent(WEBVIEW_EMAIL)}&surveyType=nightly-recap`,
+    { maxRedirects: 0 }
+  );
+  expect(startResponse.status()).toBe(307);
 
+  const sessionCookie = extractSurveySessionCookie(startResponse.headers()["set-cookie"]);
+  const location = startResponse.headers()["location"];
+
+  await page.context().addCookies([
+    {
+      name: "survey_session",
+      value: sessionCookie,
+      url: BASE_URL,
+      httpOnly: true,
+      sameSite: "Lax"
+    }
+  ]);
+
+  await page.goto(location);
   await expect(page).toHaveURL(/\/survey\/nightly-recap/);
   await expect(page.getByText("Initializing...")).toHaveCount(0);
 
@@ -84,6 +111,7 @@ test("webview-style start route can submit nightly recap and persist data", asyn
   });
 
   expect(tracker).toBeTruthy();
+  expect(tracker?.surveyType).toBe("nightly-recap");
   expect(tracker?.finalSubmitTime).toBeTruthy();
 });
 
@@ -97,10 +125,26 @@ test("launch-code email flow can redeem code, submit survey, and mark code used"
   expect(codeResponse.ok()).toBe(true);
   const codeBody = await codeResponse.json();
 
-  await page.goto(
+  const startResponse = await request.get(
     `/start?email=${encodeURIComponent(LAUNCH_CODE_EMAIL)}&code=${encodeURIComponent(codeBody.code)}`
+    , { maxRedirects: 0 }
   );
+  expect(startResponse.status()).toBe(307);
 
+  const sessionCookie = extractSurveySessionCookie(startResponse.headers()["set-cookie"]);
+  const location = startResponse.headers()["location"];
+
+  await page.context().addCookies([
+    {
+      name: "survey_session",
+      value: sessionCookie,
+      url: BASE_URL,
+      httpOnly: true,
+      sameSite: "Lax"
+    }
+  ]);
+
+  await page.goto(location);
   await expect(page).toHaveURL(/\/survey\/nightly-recap/);
   await expect(page.getByText("Initializing...")).toHaveCount(0);
   await page.getByTestId("q1-option-4").click();

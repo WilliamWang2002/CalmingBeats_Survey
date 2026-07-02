@@ -16,6 +16,7 @@ async function seedTracker(userId: string, sessionId: string) {
   await getDb().collection("surveyTrackers").insertOne({
     userId,
     sessionId,
+    surveyType: "nightly-recap",
     surveyOpenTime: new Date(),
     questionEvents: [],
     finalSubmitTime: null,

@@ -204,8 +204,8 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
     return (
       <main>
         <Card className="shadow-sm border-0 overflow-hidden">
-          <div className="bg-gradient-to-br from-[#9AD4BD] to-[#6EB69A] px-6 py-10 flex flex-col items-center gap-3 text-center">
-            <div className="w-14 h-14 rounded-full bg-white/30 flex items-center justify-center text-2xl text-[#183229] font-bold">&#10003;</div>
+          <div className="px-6 py-10 flex flex-col items-center gap-3 text-center">
+            <div className="w-14 h-14 rounded-full bg-[#9AD4BD]/35 flex items-center justify-center text-2xl text-[#183229] font-bold">&#10003;</div>
             <h2 className="text-xl font-semibold text-[#183229]">Thank you!</h2>
             <p className="text-[#183229]/70 text-sm">Your response has been recorded.</p>
           </div>
