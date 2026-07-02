@@ -265,9 +265,10 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
                 onValueChange={(v) => setSingleAnswer(q.id, v)}
                 className="flex flex-col gap-2"
               >
-                {q.options.map((option) => (
+                {q.options.map((option, optionIndex) => (
                   <div key={option} className="flex flex-col gap-1.5">
                     <div
+                      data-testid={`${q.id}-option-${optionIndex}`}
                       className={cn(
                         "flex items-center gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-all duration-150",
                         answers[q.id] === option
@@ -299,13 +300,14 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
             {/* Multi-select */}
             {q.type === "multi" && q.options && (
               <div className="flex flex-col gap-2">
-                {q.options.map((option) => {
+                {q.options.map((option, optionIndex) => {
                   const checked =
                     Array.isArray(answers[q.id]) &&
                     (answers[q.id] as string[]).includes(option);
                   return (
                     <div key={option} className="flex flex-col gap-1.5">
                       <div
+                        data-testid={`${q.id}-option-${optionIndex}`}
                         className={cn(
                           "flex items-center gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-all duration-150",
                           checked
@@ -375,6 +377,7 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
           <p className="text-destructive text-sm mb-3">{errorMsg}</p>
         )}
         <Button
+          data-testid="submit-survey"
           className="w-full font-semibold bg-accent text-accent-foreground hover:bg-accent/85 h-11 text-base rounded-xl"
           disabled={!canSubmit}
           onClick={onSubmit}

@@ -7,9 +7,13 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run tests/unit",
+    "test:unit:watch": "vitest tests/unit",
+    "test:integration": "vitest run tests/integration",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "test:all": "pnpm run test:unit ; pnpm run test:integration ; pnpm run test:e2e"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -33,13 +37,20 @@
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4.3.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/cookie": "^0.6.0",
     "@types/node": "^20.14.12",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^6.0.3",
     "autoprefixer": "^10.5.2",
+    "jsdom": "^29.1.1",
     "postcss": "^8.5.16",
     "tailwindcss": "^4.3.2",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.1.9"
   }
 }

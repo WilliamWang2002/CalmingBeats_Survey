@@ -2,7 +2,8 @@ import { defineConfig } from "@playwright/test";
 
 const TEST_PORT = Number(process.env.E2E_PORT ?? 3100);
 const TEST_DB =
-  process.env.E2E_MONGODB_URI ?? "mongodb://localhost:27017/calmingbeats-survey-e2e";
+  process.env.E2E_MONGODB_URI ??
+  "mongodb://localhost:27017/calmingbeats-dev?replicaSet=rs0&directConnection=true";
 
 export default defineConfig({
   testDir: "./tests/e2e",
