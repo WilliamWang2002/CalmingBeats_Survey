@@ -37,7 +37,7 @@ const SurveyResponseSchema = new Schema<SurveyResponse>(
   { versionKey: false, collection: "surveyResponses" }
 );
 
-SurveyResponseSchema.index({ sessionId: 1, surveyType: 1 }, { unique: true });
+SurveyResponseSchema.index({ userId: 1, surveyType: 1 }, { unique: true });
 
 export const SurveyResponseModel: Model<SurveyResponse> =
   mongoose.models.SurveyResponse || mongoose.model<SurveyResponse>("SurveyResponse", SurveyResponseSchema);

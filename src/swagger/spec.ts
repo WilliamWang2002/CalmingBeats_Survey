@@ -7,15 +7,15 @@ export const openApiSpec = {
   paths: {
     "/start": {
       get: {
-        summary: "JWT/code exchange entrypoint"
+        summary: "Email/code session entrypoint"
       },
       post: {
-        summary: "JWT/code exchange entrypoint"
+        summary: "Email/code session entrypoint"
       }
     },
     "/api/launch-code": {
       post: {
-        summary: "Create one-time launch code"
+        summary: "Create one-time launch code for email links"
       }
     },
     "/api/tracker": {

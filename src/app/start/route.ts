@@ -4,7 +4,7 @@ import { connectMongo } from "@/lib/mongodb";
 import { SurveyLaunchCodeModel } from "@/lib/models/SurveyLaunchCode";
 import { buildSessionSetCookieHeader, createSurveySessionToken } from "@/lib/session";
 import { isSurveyType, SurveyType } from "@/lib/surveys";
-import { extractBearerFromAuthHeader, verifyBackendBearerToken } from "@/lib/verifyToken";
+import { getUserIdByEmail, hasSubmittedSurvey, normalizeEmail } from "@/lib/auth";
 
 function readSurveyType(input: string | null | undefined): SurveyType {
   if (input && isSurveyType(input)) {
@@ -32,48 +32,69 @@ function buildTargetPath(req: NextRequest, surveyType: SurveyType): string {
   return `/survey/${surveyType}${search ? `?${search}` : ""}`;
 }
 
-async function redeemLaunchCode(code: string): Promise<string> {
+async function readEmail(req: NextRequest, bodyEmail?: string | null): Promise<string> {
+  const queryEmail = req.nextUrl.searchParams.get("email");
+  const email = normalizeEmail(String(bodyEmail ?? queryEmail ?? ""));
+  if (!email) {
+    throw new Error("Missing email");
+  }
+  return email;
+}
+
+async function resolveLaunchCode(code: string, email: string): Promise<{ surveyType: SurveyType }> {
   await connectMongo();
-  const doc = await SurveyLaunchCodeModel.findOneAndUpdate(
+  const doc = await SurveyLaunchCodeModel.findOne(
     {
       code,
+      email,
       used: false,
       expiresAt: { $gt: new Date() }
     },
-    {
-      $set: { used: true, usedAt: new Date() }
-    },
-    { new: true }
+    { surveyType: 1 }
   ).lean();
 
-  if (!doc?.userId) {
+  if (!doc?.surveyType) {
     throw new Error("Invalid or expired launch code");
   }
 
-  return doc.userId;
+  return { surveyType: doc.surveyType };
 }
 
-async function resolveUserId(req: NextRequest, bodyCode?: string | null): Promise<string> {
-  const bearer = extractBearerFromAuthHeader(req.headers.get("authorization"));
-  if (bearer) {
-    const verified = await verifyBackendBearerToken(bearer);
-    return verified.userId;
-  }
-
+async function readCode(req: NextRequest, bodyCode?: string | null): Promise<string | undefined> {
   const queryCode = req.nextUrl.searchParams.get("code");
   const code = (bodyCode ?? queryCode)?.trim();
-  if (!code) {
-    throw new Error("Missing Authorization Bearer token or launch code");
+  return code || undefined;
+}
+
+async function resolveStart(req: NextRequest, explicitSurveyType: SurveyType | undefined, body?: { email?: string; code?: string }) {
+  const email = await readEmail(req, body?.email ?? null);
+  const code = await readCode(req, body?.code ?? null);
+  let surveyType = explicitSurveyType ?? readSurveyType(undefined);
+
+  if (code) {
+    const launch = await resolveLaunchCode(code, email);
+    surveyType = launch.surveyType;
   }
 
-  return redeemLaunchCode(code);
+  const userId = await getUserIdByEmail(email);
+  const alreadySubmitted = await hasSubmittedSurvey(userId, surveyType);
+  if (alreadySubmitted) {
+    throw new Error("Survey already submitted");
+  }
+
+  return { userId, code, surveyType };
 }
 
 export async function GET(req: NextRequest) {
   try {
-    const surveyType = readSurveyType(req.nextUrl.searchParams.get("type"));
-    const userId = await resolveUserId(req);
-    const sessionToken = await createSurveySessionToken(userId);
+    const surveyTypeInput = req.nextUrl.searchParams.get("surveyType") ?? req.nextUrl.searchParams.get("type");
+    const explicitSurveyType = surveyTypeInput ? readSurveyType(surveyTypeInput) : undefined;
+    const { userId, code, surveyType } = await resolveStart(req, explicitSurveyType);
+    const sessionToken = await createSurveySessionToken({
+      userId,
+      surveyType,
+      launchCode: code
+    });
     const redirectPath = buildTargetPath(req, surveyType);
     const redirectUrl = new URL(redirectPath, req.nextUrl.origin);
 
@@ -81,22 +102,31 @@ export async function GET(req: NextRequest) {
     res.headers.append("Set-Cookie", buildSessionSetCookieHeader(sessionToken));
     return res;
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unauthorized" }, { status: 401 });
+    const message = error instanceof Error ? error.message : "Unauthorized";
+    const status = message === "Survey already submitted" ? 409 : 401;
+    return NextResponse.json({ error: message }, { status });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json().catch(() => ({}))) as { code?: string; type?: string };
-    const surveyType = readSurveyType(body.type ?? req.nextUrl.searchParams.get("type"));
-    const userId = await resolveUserId(req, body.code ?? null);
-    const sessionToken = await createSurveySessionToken(userId);
+    const body = (await req.json().catch(() => ({}))) as { code?: string; type?: string; surveyType?: string; email?: string };
+    const surveyTypeInput = body.surveyType ?? body.type ?? req.nextUrl.searchParams.get("surveyType") ?? req.nextUrl.searchParams.get("type");
+    const explicitSurveyType = surveyTypeInput ? readSurveyType(surveyTypeInput) : undefined;
+    const { userId, code, surveyType } = await resolveStart(req, explicitSurveyType, body);
+    const sessionToken = await createSurveySessionToken({
+      userId,
+      surveyType,
+      launchCode: code
+    });
     const redirectPath = buildTargetPath(req, surveyType);
 
     const res = NextResponse.json({ ok: true, redirectPath });
     res.headers.append("Set-Cookie", buildSessionSetCookieHeader(sessionToken));
     return res;
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unauthorized" }, { status: 401 });
+    const message = error instanceof Error ? error.message : "Unauthorized";
+    const status = message === "Survey already submitted" ? 409 : 401;
+    return NextResponse.json({ error: message }, { status });
   }
 }

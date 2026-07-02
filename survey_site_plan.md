@@ -1,6 +1,6 @@
 # Plan: Survey Site (Next.js)
 
-## Status: Implementation in progress — core auth & routes complete, design system setup in progress
+## Status: Core implementation complete — content synced, design system live, minor UX/docs follow-ups remaining
 
 ---
 
@@ -37,7 +37,7 @@ changes instantly to production.
    sharing a public link; WKWebView keeps the experience integrated in CalmingBeats.
 2. **Rapid iteration:** Pilot phase requires frequent tweaks (question wording, branching logic, segment-specific variants).
    WebView enables daily deployments without app store friction.
-3. **Deep-linking:** Push notifications can direct to specific survey types (`/survey/day-7`, `/survey/post-intervention`)
+3. **Deep-linking:** Push notifications can direct to specific survey types (`/survey/day-7`, `/survey/day-14`, `/survey/day-21`, `/survey/nightly-recap`)
    while keeping session context intact.
 4. **Session continuity:** WKWebView preserves HttpOnly cookies; user never sees authentication details.
 
@@ -103,7 +103,7 @@ GET /start?email=user@example.com&code=<code>
 **Decision: Each survey type gets its own route (`/survey/day-7`, `/survey/day-14`, etc.).**
 
 Rationale:
-- **Different question sets:** Day 7, Day 14, Day 21, nightly recap — each with dedicated Q1-Q5 questions
+- **Different question sets:** Day 7, Day 14, Day 21, nightly recap — each with dedicated typed question definitions
 - **Easier iteration:** Change one survey's questions without touching others
 - **Analytics clarity:** Recording `surveyType` in responses makes analysis unambiguous
 - **One submission per survey:** Each route enforces `(userId, surveyType)` uniqueness — user cannot retake
@@ -111,9 +111,9 @@ Rationale:
 
 **Supported routes:**
 ```
-/survey/day-7               → Questions Q1-Q5 at Day 7 mark
-/survey/day-14              → Questions Q1-Q5 at Day 14 mark
-/survey/day-21              → Questions Q1-Q5 at Day 21 mark
+/survey/day-7               → Segment selector + weekly questions (single-select)
+/survey/day-14              → Multi-part check-in with single-select + multi-select
+/survey/day-21              → NPS-style slider + single-select + open-ended response
 /survey/nightly-recap       → Quick check-in question
 ```
 
@@ -198,7 +198,7 @@ as a top-level collection. `_id` suppressed (`{ _id: false }`) to keep the array
 | Method | Path | Purpose |
 |---|---|---|
 | `GET/POST` | `/start` | Auth entrypoint: email lookup or code redemption -> HttpOnly cookie -> redirect `/survey/[type]` |
-| `POST` | `/api/launch-code` | Browser fallback: mint single-use code (expires 60 sec, invalidated after submission) |
+| `POST` | `/api/launch-code` | Browser fallback: mint single-use code (expires 600 sec, invalidated after submission) |
 | `POST` | `/api/tracker` | Called on page load — creates tracker doc, returns `sessionId` |
 | `POST` | `/api/survey` | Saves responses + all timing events + sets `finalSubmitTime` + records `surveyType` |
 | `GET`  | `/api/survey-result` | Returns responses + tracker for the authenticated user |
@@ -233,7 +233,7 @@ Query params supplied by iOS app before deep-linking; Survey Site reads them to 
 ```json
 {
   "sessionId": "<uuid>",
-  "surveyType": "day-7",           // "day-7", "day-14", "day-21", "post-intervention", "nightly-recap"
+  "surveyType": "day-7",           // "day-7", "day-14", "day-21", "nightly-recap"
   "variant": "v1",                 // optional, for A/B testing (e.g., "v2")
   "responses": [
     { "questionId": "q1", "answer": 4 },
@@ -318,15 +318,13 @@ Survey_Site/
    │   │   └── route.ts            # Token/code exchange, set cookie, redirect to /survey/[type]
    │   ├── survey/
    │   │   ├── day-7/
-   │   │   │   └── page.tsx        # Questions 1-7, segment-aware branching
+  │   │   │   │   └── page.tsx        # Day 7 survey page
    │   │   ├── day-14/
-   │   │   │   └── page.tsx        # Questions 1-8 + NPS, segment-aware
+  │   │   │   │   └── page.tsx        # Day 14 survey page
    │   │   ├── day-21/
-   │   │   │   └── page.tsx        # Personalization check-in
-   │   │   ├── post-intervention/
-   │   │   │   └── page.tsx        # 3 quick questions: before/after/usefulness
+  │   │   │   │   └── page.tsx        # Day 21 survey page
    │   │   └── nightly-recap/
-   │   │       └── page.tsx        # 1-2 questions, context from JWT (calm score, intervention count)
+  │   │   │       └── page.tsx        # Nightly recap survey page
 │   │   └── api/
 │   │       ├── launch-code/
 │   │       │   └── route.ts        # POST /api/launch-code (browser fallback)
@@ -340,18 +338,18 @@ Survey_Site/
 │   │           └── route.ts        # GET  /api/docs → Swagger UI
 │   │
 │   ├── components/
-│   │   ├── SurveyShell.tsx         # layout, loading/error states
-│   │   ├── QuestionCard.tsx        # single question renderer (type-switched)
-│   │   └── ProgressBar.tsx
+│   │   ├── SurveyForm.tsx          # typed survey renderer (single/multi/slider/text)
+│   │   └── ui/                     # shadcn/ui components
 │   │
 │   ├── lib/
 │   │   ├── mongodb.ts              # Mongoose singleton (Next.js hot-reload safe)
 │   │   ├── auth.ts                 # Email lookup + launch code verification
 │   │   ├── session.ts              # Issue/verify HttpOnly survey session cookie
+│   │   ├── surveys.ts              # typed survey question definitions
 │   │   └── models/
 │   │       ├── SurveyTracker.ts
 │   │       ├── SurveyResponse.ts
-│   │       ├── User.ts             # Read-only model on shared users collection (for token check)
+│   │       ├── User.ts             # Read-only model on shared users collection (email lookup)
 │   │       └── SurveyLaunchCode.ts # Optional one-time launch code model
 │   │
 │   └── swagger/
@@ -487,7 +485,7 @@ MONGODB_URI=mongodb://localhost:27017/calmingbeats-dev
 
 1. **Question wording:** Edit `day-7/page.tsx`, redeploy → all users see new wording next load
 2. **A/B variants:** Route users to `/survey/day-7?variant=v2` → different JSX, same schema
-3. **Branching logic:** Check `userSegment` from JWT → render Student vs Working Professional questions
+3. **Branching logic:** User segment is available via query/session context and can drive survey variants when needed
 4. **No app review:** Zero gatekeeping; changes live within minutes
 5. **Analytics:** `surveyType` + `variant` fields in responses allow measuring "which version converts better?"
 
@@ -513,25 +511,25 @@ MONGODB_URI=mongodb://localhost:27017/calmingbeats-dev
 
 ### Component Library
 - **Framework:** shadcn/ui + Tailwind CSS
-- **Key components:** `button`, `card`, `radio-group`, `progress`, `tooltip`
+- **Key components:** `button`, `card`, `radio-group`, `checkbox`, `textarea`, `progress`, `badge`
 - **Customization:** Tailwind config with theme color palette
 
 ### Survey Content
-- **Day 7, 14, 21 questions:** Defined in `content_doc/` (Q1-Q5 per survey)
-- **Implementation:** Parse content into `src/lib/surveys.ts` structured format
+- **Day 7, 14, 21 questions:** Synced from `content_doc/` into typed question definitions
+- **Implementation:** Structured in `src/lib/surveys.ts` with `single | multi | slider | text` question types
 - **Nightly recap:** Quick single-question check-in (defined separately)
 
 ---
 
 ## Open Items
 
-- [ ] **Setup shadcn/ui + Tailwind** — Initialize design system with color palette
-- [ ] **Parse survey content** into structured format in `src/lib/surveys.ts`
-- [ ] **Implement email-based auth** in `/start` and `/api/launch-code` routes
-- [ ] **Single-use code enforcement** — Mark code as used after submission completes
-- [ ] **Create survey form components** (question card, progress bar, submit button)
-- [ ] **Add tooltips and question numbering** per design spec
+- [x] **Setup shadcn/ui + Tailwind** — Design system initialized with brand theme tokens
+- [x] **Parse survey content** into structured format in `src/lib/surveys.ts`
+- [x] **Implement email-based auth** in `/start` and `/api/launch-code` routes
+- [x] **Single-use code enforcement** — Launch code invalidated after successful submission
+- [x] **Create survey form components** with typed rendering (single/multi/slider/text)
+- [x] **Question numbering + progress bar** implemented in the form UI
 - [x] **Prevent re-takes:** One submission per `(userId, surveyType)` via unique index + server-side validation
 - [ ] **Design variant routing** for A/B testing (feature flags or query param)
-- [ ] **Create root `SomaBeats/docker-compose.yml`** (orchestrates services locally)
-- [ ] **Update `SomaBeats/README.md`** with developer onboarding steps
+- [ ] **Convert Day 7 segment selector into a dedicated intro step** (currently included as first required question)
+- [ ] **Plan/docs consistency pass** across root docs and onboarding notes

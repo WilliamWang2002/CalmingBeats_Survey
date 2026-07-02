@@ -1,8 +1,15 @@
 import { jwtVerify, SignJWT } from "jose";
 import { parse, serialize } from "cookie";
 import { NextRequest } from "next/server";
+import { SurveyType } from "@/lib/surveys";
 
 const COOKIE_NAME = "survey_session";
+
+export type SurveySessionPayload = {
+  userId: string;
+  surveyType?: SurveyType;
+  launchCode?: string;
+};
 
 function getSessionSecret(): Uint8Array {
   const secret = process.env.SESSION_SECRET;
@@ -12,8 +19,8 @@ function getSessionSecret(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
-export async function createSurveySessionToken(userId: string): Promise<string> {
-  return new SignJWT({ userId })
+export async function createSurveySessionToken(payload: SurveySessionPayload): Promise<string> {
+  return new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuedAt()
     .setExpirationTime("7d")
@@ -30,7 +37,7 @@ export function buildSessionSetCookieHeader(token: string): string {
   });
 }
 
-export async function getSessionUserIdFromRequest(req: NextRequest): Promise<string> {
+export async function getSurveySessionFromRequest(req: NextRequest): Promise<SurveySessionPayload> {
   const cookieHeader = req.headers.get("cookie") ?? "";
   const cookies = parse(cookieHeader);
   const token = cookies[COOKIE_NAME];
@@ -43,5 +50,15 @@ export async function getSessionUserIdFromRequest(req: NextRequest): Promise<str
   if (!userId) {
     throw new Error("Invalid survey session payload");
   }
-  return userId;
+
+  return {
+    userId,
+    surveyType: payload.surveyType ? (String(payload.surveyType) as SurveyType) : undefined,
+    launchCode: payload.launchCode ? String(payload.launchCode) : undefined
+  };
+}
+
+export async function getSessionUserIdFromRequest(req: NextRequest): Promise<string> {
+  const session = await getSurveySessionFromRequest(req);
+  return session.userId;
 }

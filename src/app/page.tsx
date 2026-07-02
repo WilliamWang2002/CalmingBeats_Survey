@@ -6,7 +6,7 @@ export default function HomePage() {
       <div className="card">
         <h1>CalmingBeats Survey Site</h1>
         <p className="muted">
-          This app is intended to be opened from iOS WKWebView via <code>/start</code> with a Bearer token.
+          This app is intended to be opened from iOS WKWebView or browser email links via <code>/start</code>.
         </p>
       </div>
 
@@ -21,9 +21,6 @@ export default function HomePage() {
           </li>
           <li>
             <Link href="/survey/day-21">Day 21</Link>
-          </li>
-          <li>
-            <Link href="/survey/post-intervention">Post Intervention</Link>
           </li>
           <li>
             <Link href="/survey/nightly-recap">Nightly Recap</Link>

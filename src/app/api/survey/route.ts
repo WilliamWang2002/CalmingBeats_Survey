@@ -3,7 +3,8 @@ import { z } from "zod";
 import { connectMongo } from "@/lib/mongodb";
 import { SurveyResponseModel } from "@/lib/models/SurveyResponse";
 import { SurveyTrackerModel } from "@/lib/models/SurveyTracker";
-import { getSessionUserIdFromRequest } from "@/lib/session";
+import { SurveyLaunchCodeModel } from "@/lib/models/SurveyLaunchCode";
+import { getSurveySessionFromRequest } from "@/lib/session";
 import { SURVEY_TYPES } from "@/lib/surveys";
 
 const payloadSchema = z.object({
@@ -28,10 +29,26 @@ const payloadSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    const userId = await getSessionUserIdFromRequest(req);
+    const session = await getSurveySessionFromRequest(req);
+    const userId = session.userId;
     const body = payloadSchema.parse(await req.json());
 
+    if (session.surveyType && body.surveyType !== session.surveyType) {
+      return NextResponse.json({ error: "Survey type mismatch" }, { status: 400 });
+    }
+
     await connectMongo();
+
+    const alreadySubmitted = await SurveyResponseModel.findOne({
+      userId,
+      surveyType: body.surveyType
+    })
+      .select({ _id: 1 })
+      .lean();
+
+    if (alreadySubmitted?._id) {
+      return NextResponse.json({ error: "Survey already submitted" }, { status: 409 });
+    }
 
     await SurveyTrackerModel.findOneAndUpdate(
       { userId, sessionId: body.sessionId },
@@ -46,37 +63,37 @@ export async function POST(req: NextRequest) {
         }
       },
       {
-        upsert: true,
+        upsert: false,
         setDefaultsOnInsert: true
       }
     );
 
-    const result = await SurveyResponseModel.findOneAndUpdate(
-      {
-        sessionId: body.sessionId,
-        surveyType: body.surveyType
-      },
-      {
-        $set: {
-          userId,
-          sessionId: body.sessionId,
-          surveyType: body.surveyType,
-          variant: body.variant,
-          responses: body.responses,
-          submittedAt: new Date(body.finalSubmitTime)
-        },
-        $setOnInsert: {
-          createdAt: new Date()
-        }
-      },
-      {
-        upsert: true,
-        new: true,
-        setDefaultsOnInsert: true
-      }
-    ).lean();
+    const result = await SurveyResponseModel.create({
+      userId,
+      sessionId: body.sessionId,
+      surveyType: body.surveyType,
+      variant: body.variant,
+      responses: body.responses,
+      submittedAt: new Date(body.finalSubmitTime),
+      createdAt: new Date()
+    });
 
-    return NextResponse.json({ ok: true, id: result?._id });
+    if (session.launchCode) {
+      await SurveyLaunchCodeModel.updateOne(
+        {
+          code: session.launchCode,
+          used: false
+        },
+        {
+          $set: {
+            used: true,
+            usedAt: new Date()
+          }
+        }
+      );
+    }
+
+    return NextResponse.json({ ok: true, id: result._id });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to save survey" },
