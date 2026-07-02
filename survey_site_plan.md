@@ -530,6 +530,6 @@ MONGODB_URI=mongodb://localhost:27017/calmingbeats-dev
 - [x] **Create survey form components** with typed rendering (single/multi/slider/text)
 - [x] **Question numbering + progress bar** implemented in the form UI
 - [x] **Prevent re-takes:** One submission per `(userId, surveyType)` via unique index + server-side validation
-- [ ] **Design variant routing** for A/B testing (feature flags or query param)
-- [ ] **Convert Day 7 segment selector into a dedicated intro step** (currently included as first required question)
-- [ ] **Plan/docs consistency pass** across root docs and onboarding notes
+- [ ] **Optional: Design variant routing** for A/B testing (feature flags or query param)
+- [ ] **Optional: Convert Day 7 segment selector into a dedicated intro step** (currently included as first required question)
+- [ ] **Optional: Plan/docs consistency pass** across root docs and onboarding notes

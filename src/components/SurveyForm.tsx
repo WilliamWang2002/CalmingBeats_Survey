@@ -1,15 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SurveyQuestion, SurveyType } from "@/lib/surveys";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+
+/** Returns true if the option is the "Other (please specify)" option. */
+function isOtherOption(option: string) {
+  return option.startsWith("Other");
+}
+
+/** Clean display label — strips trailing ": ____" patterns from "Other: _____". */
+function displayLabel(option: string) {
+  if (isOtherOption(option)) return "Other (please specify)";
+  return option;
+}
 
 type Props = {
   surveyType: SurveyType;
@@ -32,14 +43,50 @@ type QuestionEvent = {
 /** Each answer is a string (single/slider) or string[] (multi). */
 type Answers = Record<string, string | string[]>;
 
-function isAnswered(q: SurveyQuestion, answers: Answers): boolean {
+/** Per-question free text when the user picks "Other". */
+type OtherTexts = Record<string, string>;
+
+function isOtherSelected(q: SurveyQuestion, answers: Answers): boolean {
+  if (q.type === "single") {
+    return typeof answers[q.id] === "string" && isOtherOption(answers[q.id] as string);
+  }
+  if (q.type === "multi") {
+    return Array.isArray(answers[q.id]) &&
+      (answers[q.id] as string[]).some(isOtherOption);
+  }
+  return false;
+}
+
+function isAnswered(q: SurveyQuestion, answers: Answers, otherTexts: OtherTexts): boolean {
   const v = answers[q.id];
-  if (q.type === "multi") return Array.isArray(v) && v.length > 0;
+  if (q.type === "multi") {
+    if (!Array.isArray(v) || v.length === 0) return false;
+    if ((v as string[]).some(isOtherOption) && !otherTexts[q.id]?.trim()) return false;
+    return true;
+  }
   if (q.type === "text") return typeof v === "string" && v.trim().length > 0;
+  if (q.type === "single") {
+    if (typeof v !== "string" || v.length === 0) return false;
+    if (isOtherOption(v) && !otherTexts[q.id]?.trim()) return false;
+    return true;
+  }
   return typeof v === "string" && v.length > 0;
 }
 
-function serializeAnswer(v: string | string[] | undefined): string {
+function serializeAnswer(
+  q: SurveyQuestion,
+  answers: Answers,
+  otherTexts: OtherTexts
+): string {
+  const v = answers[q.id];
+  if (q.type === "multi" && Array.isArray(v)) {
+    return (v as string[])
+      .map((item) => (isOtherOption(item) ? `Other: ${otherTexts[q.id] ?? ""}` : item))
+      .join(", ");
+  }
+  if (typeof v === "string" && isOtherOption(v)) {
+    return `Other: ${otherTexts[q.id] ?? ""}`;
+  }
   if (Array.isArray(v)) return v.join(", ");
   return v ?? "";
 }
@@ -47,6 +94,7 @@ function serializeAnswer(v: string | string[] | undefined): string {
 export default function SurveyForm({ surveyType, title, questions, variant, context }: Props) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Answers>({});
+  const [otherTexts, setOtherTexts] = useState<OtherTexts>({});
   const [events, setEvents] = useState<QuestionEvent[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<"idle" | "error" | "done">("idle");
@@ -66,8 +114,8 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
   }, []);
 
   const answeredCount = useMemo(
-    () => questions.filter((q) => isAnswered(q, answers)).length,
-    [answers, questions]
+    () => questions.filter((q) => isAnswered(q, answers, otherTexts)).length,
+    [answers, otherTexts, questions]
   );
   const progressPercent = questions.length
     ? Math.round((answeredCount / questions.length) * 100)
@@ -75,7 +123,7 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
 
   const canSubmit =
     Boolean(sessionId) &&
-    questions.every((q) => isAnswered(q, answers)) &&
+    questions.every((q) => isAnswered(q, answers, otherTexts)) &&
     !isSubmitting &&
     submitStatus !== "done";
 
@@ -87,19 +135,31 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
   }
 
   function setSingleAnswer(questionId: string, value: string) {
-    const was = isAnswered(questions.find((q) => q.id === questionId)!, answers);
+    const was = isAnswered(questions.find((q) => q.id === questionId)!, answers, otherTexts);
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
+    // Clear saved "other" text when user switches away from Other
+    if (!isOtherOption(value)) {
+      setOtherTexts((prev) => { const n = { ...prev }; delete n[questionId]; return n; });
+    }
     recordEvent(questionId, was);
   }
 
   function toggleMultiAnswer(questionId: string, option: string, checked: boolean) {
-    const was = isAnswered(questions.find((q) => q.id === questionId)!, answers);
+    const was = isAnswered(questions.find((q) => q.id === questionId)!, answers, otherTexts);
     setAnswers((prev) => {
       const current = Array.isArray(prev[questionId]) ? (prev[questionId] as string[]) : [];
       const next = checked ? [...current, option] : current.filter((o) => o !== option);
       return { ...prev, [questionId]: next };
     });
+    // Clear "other" text when unchecking Other
+    if (!checked && isOtherOption(option)) {
+      setOtherTexts((prev) => { const n = { ...prev }; delete n[questionId]; return n; });
+    }
     recordEvent(questionId, was);
+  }
+
+  function setOtherText(questionId: string, text: string) {
+    setOtherTexts((prev) => ({ ...prev, [questionId]: text }));
   }
 
   async function onSubmit() {
@@ -114,7 +174,7 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
         variant,
         responses: questions.map((q) => ({
           questionId: q.id,
-          answer: serializeAnswer(answers[q.id])
+          answer: serializeAnswer(q, answers, otherTexts)
         })),
         questionEvents: events,
         finalSubmitTime: new Date().toISOString()
@@ -143,12 +203,12 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
   if (submitStatus === "done") {
     return (
       <main>
-        <Card className="shadow-sm">
-          <CardContent className="pt-8 pb-8 flex flex-col items-center gap-3 text-center">
-            <div className="text-4xl text-primary">&#10003;</div>
-            <h2 className="text-xl font-semibold text-foreground">Thank you!</h2>
-            <p className="text-muted-foreground text-sm">Your response has been recorded.</p>
-          </CardContent>
+        <Card className="shadow-sm border-0 overflow-hidden">
+          <div className="bg-gradient-to-br from-[#9AD4BD] to-[#6EB69A] px-6 py-10 flex flex-col items-center gap-3 text-center">
+            <div className="w-14 h-14 rounded-full bg-white/30 flex items-center justify-center text-2xl text-[#183229] font-bold">&#10003;</div>
+            <h2 className="text-xl font-semibold text-[#183229]">Thank you!</h2>
+            <p className="text-[#183229]/70 text-sm">Your response has been recorded.</p>
+          </div>
         </Card>
       </main>
     );
@@ -157,25 +217,25 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
   return (
     <main>
       {/* Header card */}
-      <Card className="mb-4 shadow-sm">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg font-semibold">{title}</CardTitle>
+      <Card className="mb-5 shadow-sm">
+        <div className="px-5 pt-5 pb-4">
+          <h1 className="text-2xl font-semibold text-foreground leading-snug">{title}</h1>
           {(context?.userSegment || context?.calmScore || context?.interventionCount) && (
             <p className="text-xs text-muted-foreground mt-1">
               {[
                 context.userSegment && `Segment: ${context.userSegment}`,
-                context.interventionCount && `Interventions today: ${context.interventionCount}`,
+                context.interventionCount && `Interventions: ${context.interventionCount}`,
                 context.calmScore && `Calm score: ${context.calmScore}`
               ]
                 .filter(Boolean)
                 .join(" · ")}
             </p>
           )}
-        </CardHeader>
-        <CardContent className="pt-0">
+        </div>
+        <CardContent className="pt-0 pb-4">
           <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
             <span>Progress</span>
-            <span>
+            <span className="font-medium">
               {answeredCount} / {questions.length}
             </span>
           </div>
@@ -191,8 +251,10 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
       {questions.map((q, idx) => (
         <Card key={q.id} className="mb-3 shadow-sm">
           <CardContent className="pt-5 pb-5">
-            <p className="text-sm font-semibold text-foreground mb-3 leading-snug">
-              <span className="text-primary mr-1.5">Q{idx + 1}.</span>
+            <p className="text-sm font-medium text-foreground mb-3 leading-snug flex gap-2 items-start">
+              <span className="inline-flex items-center justify-center min-w-[1.375rem] h-[1.375rem] rounded-full bg-primary/20 text-primary text-[0.7rem] font-bold flex-shrink-0 mt-px">
+                {idx + 1}
+              </span>
               {q.label}
             </p>
 
@@ -204,23 +266,31 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
                 className="flex flex-col gap-2"
               >
                 {q.options.map((option) => (
-                  <div
-                    key={option}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors",
-                      answers[q.id] === option
-                        ? "border-primary bg-primary/10"
-                        : "border-border hover:bg-muted/60"
-                    )}
-                    onClick={() => setSingleAnswer(q.id, option)}
-                  >
-                    <RadioGroupItem value={option} id={`${q.id}-${option}`} />
-                    <Label
-                      htmlFor={`${q.id}-${option}`}
-                      className="cursor-pointer text-sm leading-tight"
+                  <div key={option} className="flex flex-col gap-1.5">
+                    <div
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-all duration-150",
+                        answers[q.id] === option
+                          ? "border-primary border-l-[3px] bg-primary/10 pl-[10px]"
+                          : "border-border hover:border-primary/40 hover:bg-primary/5"
+                      )}
+                      onClick={() => setSingleAnswer(q.id, option)}
                     >
-                      {option}
-                    </Label>
+                      <RadioGroupItem value={option} id={`${q.id}-${option}`} />
+                      <Label
+                        htmlFor={`${q.id}-${option}`}
+                        className="cursor-pointer text-sm font-normal leading-tight"
+                      >
+                        {displayLabel(option)}
+                      </Label>
+                    </div>
+                    {isOtherOption(option) && answers[q.id] === option && (
+                      <OtherInput
+                        id={`${q.id}-other-text`}
+                        value={otherTexts[q.id] ?? ""}
+                        onChange={(v) => setOtherText(q.id, v)}
+                      />
+                    )}
                   </div>
                 ))}
               </RadioGroup>
@@ -234,27 +304,35 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
                     Array.isArray(answers[q.id]) &&
                     (answers[q.id] as string[]).includes(option);
                   return (
-                    <div
-                      key={option}
-                      className={cn(
-                        "flex items-center gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors",
-                        checked
-                          ? "border-primary bg-primary/10"
-                          : "border-border hover:bg-muted/60"
-                      )}
-                      onClick={() => toggleMultiAnswer(q.id, option, !checked)}
-                    >
-                      <Checkbox
-                        id={`${q.id}-${option}`}
-                        checked={checked}
-                        onCheckedChange={(c) => toggleMultiAnswer(q.id, option, Boolean(c))}
-                      />
-                      <Label
-                        htmlFor={`${q.id}-${option}`}
-                        className="cursor-pointer text-sm leading-tight"
+                    <div key={option} className="flex flex-col gap-1.5">
+                      <div
+                        className={cn(
+                          "flex items-center gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-all duration-150",
+                          checked
+                            ? "border-primary border-l-[3px] bg-primary/10 pl-[10px]"
+                            : "border-border hover:border-primary/40 hover:bg-primary/5"
+                        )}
+                        onClick={() => toggleMultiAnswer(q.id, option, !checked)}
                       >
-                        {option}
-                      </Label>
+                        <Checkbox
+                          id={`${q.id}-${option}`}
+                          checked={checked}
+                          onCheckedChange={(c) => toggleMultiAnswer(q.id, option, Boolean(c))}
+                        />
+                        <Label
+                          htmlFor={`${q.id}-${option}`}
+                          className="cursor-pointer text-sm font-normal leading-tight"
+                        >
+                          {displayLabel(option)}
+                        </Label>
+                      </div>
+                      {isOtherOption(option) && checked && (
+                        <OtherInput
+                          id={`${q.id}-other-text`}
+                          value={otherTexts[q.id] ?? ""}
+                          onChange={(v) => setOtherText(q.id, v)}
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -286,11 +364,18 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
 
       {/* Submit */}
       <div className="mt-2 mb-8">
+        <div className="mb-3">
+          <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
+            <span>{answeredCount === questions.length ? "All questions answered" : `${questions.length - answeredCount} remaining`}</span>
+            <span className="font-medium">{progressPercent}%</span>
+          </div>
+          <Progress value={progressPercent} className="h-2" />
+        </div>
         {errorMsg && (
           <p className="text-destructive text-sm mb-3">{errorMsg}</p>
         )}
         <Button
-          className="w-full font-semibold"
+          className="w-full font-semibold bg-accent text-accent-foreground hover:bg-accent/85 h-11 text-base rounded-xl"
           disabled={!canSubmit}
           onClick={onSubmit}
           type="button"
@@ -302,6 +387,37 @@ export default function SurveyForm({ surveyType, title, questions, variant, cont
         )}
       </div>
     </main>
+  );
+}
+
+// ─── Other Input ─────────────────────────────────────────────────────────────
+
+function OtherInput({
+  id,
+  value,
+  onChange
+}: {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => { ref.current?.focus(); }, []);
+
+  return (
+    <input
+      ref={ref}
+      id={id}
+      type="text"
+      placeholder="Please specify..."
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={cn(
+        "w-full rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm",
+        "placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring",
+        "animate-in fade-in slide-in-from-top-1 duration-150"
+      )}
+    />
   );
 }
 
@@ -319,6 +435,18 @@ function NpsSelector({
   onChange: (v: number) => void;
 }) {
   const steps = Array.from({ length: max - min + 1 }, (_, i) => i + min);
+
+  function npsColor(n: number, selected: boolean) {
+    if (selected) {
+      if (n <= 4) return "bg-destructive text-white border-destructive";
+      if (n <= 6) return "bg-muted-foreground text-white border-muted-foreground";
+      return "bg-primary text-primary-foreground border-primary";
+    }
+    if (n <= 4) return "border-destructive/30 text-destructive/70 hover:bg-destructive/10";
+    if (n <= 6) return "border-border text-muted-foreground hover:bg-muted/60";
+    return "border-primary/30 text-primary/80 hover:bg-primary/10";
+  }
+
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-11 gap-1">
@@ -328,10 +456,8 @@ function NpsSelector({
             type="button"
             onClick={() => onChange(n)}
             className={cn(
-              "rounded-md py-2 text-sm font-semibold border transition-colors",
-              value === n
-                ? "bg-primary text-primary-foreground border-primary"
-                : "border-border bg-background hover:bg-muted/60 text-foreground"
+              "rounded-md py-2 text-sm font-semibold border transition-all duration-150",
+              npsColor(n, value === n)
             )}
           >
             {n}
